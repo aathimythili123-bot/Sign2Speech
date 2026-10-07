@@ -1,0 +1,757 @@
+# ============================================================
+# Sign2Speech
+# Sign Language Recognition Using Deep Learning
+# Small Sample Dataset + CNN + Speech
+# ============================================================
+
+import os
+import sys
+import subprocess
+import urllib.request
+from pathlib import Path
+
+# ------------------------------------------------------------
+# 1. INSTALL REQUIRED PACKAGES IF MISSING
+# ------------------------------------------------------------
+
+packages = {
+    "pandas": "pandas",
+    "numpy": "numpy",
+    "tensorflow": "tensorflow",
+    "PIL": "Pillow",
+    "pyttsx3": "pyttsx3"
+}
+
+for import_name, package_name in packages.items():
+
+    try:
+        __import__(import_name)
+
+    except ImportError:
+
+        print(f"Installing {package_name}...")
+
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", package_name]
+        )
+
+
+# ------------------------------------------------------------
+# 2. IMPORT LIBRARIES
+# ------------------------------------------------------------
+
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+
+from PIL import Image
+from tensorflow.keras import layers, models
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+import pyttsx3
+
+
+# ------------------------------------------------------------
+# 3. PROJECT SETTINGS
+# ------------------------------------------------------------
+
+PROJECT_DIR = Path(
+    r"C:\Users\MOULIKA\Downloads\Sign2Speech"
+)
+
+PROJECT_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+os.chdir(PROJECT_DIR)
+
+TRAIN_CSV = PROJECT_DIR / "sign_mnist_train.csv"
+TEST_CSV = PROJECT_DIR / "sign_mnist_test.csv"
+
+MODEL_FILE = PROJECT_DIR / "sign2speech_cnn.keras"
+
+print("=" * 65)
+print("                 Sign2Speech")
+print("      Sign Language Recognition Using Deep Learning")
+print("=" * 65)
+
+print("\nProject folder:")
+print(PROJECT_DIR)
+
+
+# ------------------------------------------------------------
+# 4. DOWNLOAD REAL SIGN LANGUAGE DATASET
+# ------------------------------------------------------------
+
+TRAIN_URL = (
+    "https://raw.githubusercontent.com/"
+    "Elsaraf1/sign-language/main/"
+    "sign_mnist_train.csv"
+)
+
+TEST_URL = (
+    "https://raw.githubusercontent.com/"
+    "Elsaraf1/sign-language/main/"
+    "sign_mnist_test.csv"
+)
+
+print("\nChecking dataset...")
+
+def download_file(url, filename):
+
+    if filename.exists():
+
+        print(
+            filename.name,
+            "already exists."
+        )
+
+        return True
+
+    try:
+
+        print(
+            "\nDownloading",
+            filename.name,
+            "..."
+        )
+
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            }
+        )
+
+        with urllib.request.urlopen(
+            request,
+            timeout=120
+        ) as response:
+
+            data = response.read()
+
+        with open(
+            filename,
+            "wb"
+        ) as file:
+
+            file.write(data)
+
+        print(
+            "Downloaded successfully."
+        )
+
+        return True
+
+    except Exception as e:
+
+        print(
+            "\nDownload failed:"
+        )
+
+        print(e)
+
+        return False
+
+
+train_downloaded = download_file(
+    TRAIN_URL,
+    TRAIN_CSV
+)
+
+test_downloaded = download_file(
+    TEST_URL,
+    TEST_CSV
+)
+
+
+# ------------------------------------------------------------
+# 5. CHECK DOWNLOAD
+# ------------------------------------------------------------
+
+if not train_downloaded or not test_downloaded:
+
+    print("\n")
+    print("=" * 65)
+    print("DATASET DOWNLOAD FAILED")
+    print("=" * 65)
+
+    print(
+        "\nPlease check your internet connection and run"
+        " this cell again."
+    )
+
+else:
+
+    # --------------------------------------------------------
+    # 6. READ DATASET
+    # --------------------------------------------------------
+
+    print("\nReading Sign Language MNIST...")
+
+    train_df = pd.read_csv(
+        TRAIN_CSV
+    )
+
+    test_df = pd.read_csv(
+        TEST_CSV
+    )
+
+    print(
+        "\nOriginal training samples:",
+        len(train_df)
+    )
+
+    print(
+        "Original testing samples:",
+        len(test_df)
+    )
+
+
+    # --------------------------------------------------------
+    # 7. SELECT SMALL SAMPLE
+    # --------------------------------------------------------
+
+    # Labels:
+    # 0 = A
+    # 1 = B
+    # 2 = C
+    # 3 = D
+    # 4 = E
+
+    selected_labels = [
+        0,
+        1,
+        2,
+        3,
+        4
+    ]
+
+    label_names = {
+        0: "A",
+        1: "B",
+        2: "C",
+        3: "D",
+        4: "E"
+    }
+
+    TRAIN_PER_CLASS = 100
+    TEST_PER_CLASS = 30
+
+
+    small_train_parts = []
+    small_test_parts = []
+
+
+    for label in selected_labels:
+
+        train_part = train_df[
+            train_df["label"] == label
+        ].head(
+            TRAIN_PER_CLASS
+        )
+
+        test_part = test_df[
+            test_df["label"] == label
+        ].head(
+            TEST_PER_CLASS
+        )
+
+        small_train_parts.append(
+            train_part
+        )
+
+        small_test_parts.append(
+            test_part
+        )
+
+
+    small_train = pd.concat(
+        small_train_parts,
+        ignore_index=True
+    )
+
+    small_test = pd.concat(
+        small_test_parts,
+        ignore_index=True
+    )
+
+
+    print("\n")
+    print("=" * 65)
+    print("              SMALL SAMPLE DATASET")
+    print("=" * 65)
+
+    print(
+        "\nTraining images:",
+        len(small_train)
+    )
+
+    print(
+        "Testing images:",
+        len(small_test)
+    )
+
+    print(
+        "Classes:",
+        "A, B, C, D, E"
+    )
+
+
+    # --------------------------------------------------------
+    # 8. PREPARE IMAGE DATA
+    # --------------------------------------------------------
+
+    X_train = small_train.drop(
+        "label",
+        axis=1
+    ).values
+
+    y_train = small_train[
+        "label"
+    ].values
+
+
+    X_test = small_test.drop(
+        "label",
+        axis=1
+    ).values
+
+    y_test = small_test[
+        "label"
+    ].values
+
+
+    # Convert 784 pixels into 28x28 images
+
+    X_train = X_train.reshape(
+        -1,
+        28,
+        28,
+        1
+    )
+
+    X_test = X_test.reshape(
+        -1,
+        28,
+        28,
+        1
+    )
+
+
+    # Normalize pixels
+
+    X_train = (
+        X_train.astype("float32")
+        / 255.0
+    )
+
+    X_test = (
+        X_test.astype("float32")
+        / 255.0
+    )
+
+
+    # --------------------------------------------------------
+    # 9. CONVERT LABELS TO 0-4
+    # --------------------------------------------------------
+
+    y_train = np.array(
+        [
+            label
+            for label in y_train
+        ]
+    )
+
+    y_test = np.array(
+        [
+            label
+            for label in y_test
+        ]
+    )
+
+
+    # --------------------------------------------------------
+    # 10. CREATE CNN
+    # --------------------------------------------------------
+
+    print("\nCreating CNN model...")
+
+
+    model = models.Sequential([
+
+        layers.Input(
+            shape=(28, 28, 1)
+        ),
+
+        layers.Conv2D(
+            32,
+            (3, 3),
+            activation="relu"
+        ),
+
+        layers.MaxPooling2D(
+            (2, 2)
+        ),
+
+        layers.Conv2D(
+            64,
+            (3, 3),
+            activation="relu"
+        ),
+
+        layers.MaxPooling2D(
+            (2, 2)
+        ),
+
+        layers.Conv2D(
+            128,
+            (3, 3),
+            activation="relu"
+        ),
+
+        layers.MaxPooling2D(
+            (2, 2)
+        ),
+
+        layers.Flatten(),
+
+        layers.Dense(
+            128,
+            activation="relu"
+        ),
+
+        layers.Dropout(
+            0.3
+        ),
+
+        layers.Dense(
+            5,
+            activation="softmax"
+        )
+    ])
+
+
+    # --------------------------------------------------------
+    # 11. COMPILE CNN
+    # --------------------------------------------------------
+
+    model.compile(
+
+        optimizer="adam",
+
+        loss="sparse_categorical_crossentropy",
+
+        metrics=[
+            "accuracy"
+        ]
+    )
+
+
+    print(
+        "\nCNN model created successfully!"
+    )
+
+
+    # --------------------------------------------------------
+    # 12. MODEL SUMMARY
+    # --------------------------------------------------------
+
+    model.summary()
+
+
+    # --------------------------------------------------------
+    # 13. DATA AUGMENTATION
+    # --------------------------------------------------------
+
+    datagen = ImageDataGenerator(
+
+        rotation_range=10,
+
+        width_shift_range=0.1,
+
+        height_shift_range=0.1,
+
+        zoom_range=0.1
+    )
+
+
+    # --------------------------------------------------------
+    # 14. TRAIN MODEL
+    # --------------------------------------------------------
+
+    print("\n")
+    print("=" * 65)
+    print("                 CNN TRAINING")
+    print("=" * 65)
+
+
+    history = model.fit(
+
+        datagen.flow(
+            X_train,
+            y_train,
+            batch_size=16
+        ),
+
+        validation_data=(
+            X_test,
+            y_test
+        ),
+
+        epochs=10
+    )
+
+
+    # --------------------------------------------------------
+    # 15. EVALUATE MODEL
+    # --------------------------------------------------------
+
+    print("\n")
+    print("=" * 65)
+    print("                 MODEL EVALUATION")
+    print("=" * 65)
+
+
+    test_loss, test_accuracy = model.evaluate(
+
+        X_test,
+
+        y_test,
+
+        verbose=1
+    )
+
+
+    print(
+        "\nActual Test Accuracy:"
+    )
+
+    print(
+        round(
+            float(test_accuracy) * 100,
+            2
+        ),
+        "%"
+    )
+
+
+    print(
+        "\nTest Loss:"
+    )
+
+    print(
+        round(
+            float(test_loss),
+            4
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # 16. SAVE MODEL
+    # --------------------------------------------------------
+
+    model.save(
+        MODEL_FILE
+    )
+
+
+    print(
+        "\nModel saved successfully!"
+    )
+
+    print(
+        "File:"
+    )
+
+    print(
+        MODEL_FILE
+    )
+
+
+    # --------------------------------------------------------
+    # 17. PREDICTION FUNCTION
+    # --------------------------------------------------------
+
+    def predict_sign(
+        image_array
+    ):
+
+        image_array = (
+            image_array.astype(
+                "float32"
+            )
+            / 255.0
+        )
+
+        image_array = image_array.reshape(
+            1,
+            28,
+            28,
+            1
+        )
+
+        prediction = model.predict(
+            image_array,
+            verbose=0
+        )
+
+        predicted_index = int(
+            np.argmax(
+                prediction
+            )
+        )
+
+        confidence = (
+            prediction[0][
+                predicted_index
+            ] * 100
+        )
+
+        predicted_letter = (
+            label_names[
+                predicted_index
+            ]
+        )
+
+        print("\n")
+        print("=" * 65)
+        print("                 SIGN PREDICTION")
+        print("=" * 65)
+
+        print(
+            "\nPredicted Sign:",
+            predicted_letter
+        )
+
+        print(
+            "Confidence:",
+            round(
+                float(confidence),
+                2
+            ),
+            "%"
+        )
+
+        return predicted_letter
+
+
+    # --------------------------------------------------------
+    # 18. TEXT TO SPEECH
+    # --------------------------------------------------------
+
+    def speak_sign(
+        letter
+    ):
+
+        print(
+            "\nSpeaking:",
+            letter
+        )
+
+        try:
+
+            engine = pyttsx3.init()
+
+            engine.say(
+                "The sign is " + letter
+            )
+
+            engine.runAndWait()
+
+            engine.stop()
+
+        except Exception as e:
+
+            print(
+                "Speech error:",
+                e
+            )
+
+
+    # --------------------------------------------------------
+    # 19. TEST ONE SAMPLE IMAGE
+    # --------------------------------------------------------
+
+    sample_index = 0
+
+    sample_image = (
+        X_test[
+            sample_index
+        ]
+    )
+
+    actual_label = int(
+        y_test[
+            sample_index
+        ]
+    )
+
+    predicted_letter = predict_sign(
+        sample_image * 255
+    )
+
+
+    actual_letter = label_names[
+        actual_label
+    ]
+
+
+    print(
+        "\nActual Sign:",
+        actual_letter
+    )
+
+
+    # --------------------------------------------------------
+    # 20. SPEAK PREDICTION
+    # --------------------------------------------------------
+
+    speak_sign(
+        predicted_letter
+    )
+
+
+    # --------------------------------------------------------
+    # 21. FINAL RESULT
+    # --------------------------------------------------------
+
+    print("\n")
+    print("=" * 65)
+    print("              Sign2Speech COMPLETED")
+    print("=" * 65)
+
+    print(
+        "\nRecognized classes:"
+    )
+
+    print(
+        "A, B, C, D, E"
+    )
+
+    print(
+        "\nActual test accuracy:"
+    )
+
+    print(
+        round(
+            float(test_accuracy) * 100,
+            2
+        ),
+        "%"
+    )
+
+    print(
+        "\nSaved model:"
+    )
+
+    print(
+        MODEL_FILE
+    )
+
+    print(
+        "\nThe model recognized one sign and"
+        " converted the result to speech."
+    )
